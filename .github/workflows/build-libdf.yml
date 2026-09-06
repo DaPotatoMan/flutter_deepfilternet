@@ -3,7 +3,7 @@ name: Build libdf
 on:
   workflow_dispatch:
   push:
-    tags: ['libdf-v*']
+    tags: ["libdf-v*"]
 
 permissions:
   contents: write
@@ -30,8 +30,6 @@ jobs:
             target: x86_64-apple-darwin
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
           - os: ubuntu-24.04-arm
@@ -118,7 +116,7 @@ jobs:
             -output out/DeepFilter.xcframework
           ditto -c -k --sequesterRsrc --keepParent \
             out/DeepFilter.xcframework out/DeepFilter.xcframework.zip
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: libdf-ios-xcframework
           path: out/DeepFilter.xcframework.zip
@@ -129,7 +127,7 @@ jobs:
     needs: [build, xcframework]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: artifacts
       - name: Flatten and checksum release assets

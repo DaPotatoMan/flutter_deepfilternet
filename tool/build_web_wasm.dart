@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
@@ -13,9 +14,9 @@ Future<void> main() async {
   }
 
   // Run build with git patches
-  await _applyGitPatch(
-    patchPath: _getPath('native/patches/wasm-build.patch'),
-    cwd: crateDir.path,
+  await _applyPatches(
+    patchDir: _getPath('native/patches'),
+    sourceDir: crateDir.path,
     task: () => _runProcess(
       'wasm-pack',
       ['build', '--target', 'web', '--release', '--features', 'wasm'],
@@ -57,7 +58,7 @@ Future<void> _runProcess(
   Map<String, String>? env,
   String? cwd,
 }) async {
-  final result = await Process.run(
+  final process = await Process.start(
     command,
     args,
     workingDirectory: cwd,
@@ -65,28 +66,55 @@ Future<void> _runProcess(
     runInShell: Platform.isWindows,
   );
 
-  stdout.write(result.stdout);
-  stderr.write(result.stderr);
+  process
+    ..stdout.transform(utf8.decoder).listen(print)
+    ..stderr.transform(utf8.decoder).listen(print);
 
-  if (result.exitCode != 0) {
-    throw ProcessException(command, args, errorMessage, result.exitCode);
+  if (await process.exitCode case final code when code != 0) {
+    throw ProcessException(command, args, errorMessage, code);
   }
 }
 
-Future<void> _applyGitPatch({
+/// Applies `DeepFilterNet` submodule patches while building binaries
+Future<void> _applyPatches({
   required Future<void> Function() task,
-  required String patchPath,
-  required String cwd,
+
+  /// Directory path that contains all patches
+  required String patchDir,
+
+  /// Where patches are to be applied
+  required String sourceDir,
 }) async {
-  if (!File(patchPath).existsSync()) {
-    throw StateError('Could not find git patch at: $patchPath');
+  Future<void> cleanup() {
+    return _runProcess(
+      'git',
+      ['reset', '--hard', 'origin/main'],
+      cwd: _getPath('native/DeepFilterNet'),
+      errorMessage: 'Could not apply the git patch.',
+    );
   }
 
-  await _runProcess('git', ['apply', patchPath], cwd: cwd, errorMessage: 'Could not apply the git patch.');
-
   try {
+    await cleanup();
+
+    // Apply patches
+    {
+      final list = Directory(patchDir).listSync();
+
+      for (final patch in list) {
+        final path = patch.absolute.path;
+
+        await _runProcess(
+          'git',
+          ['apply', '--unidiff-zero', path],
+          cwd: sourceDir,
+          errorMessage: 'Could not apply the git patch: $path',
+        );
+      }
+    }
+
     await task();
   } finally {
-    await _runProcess('git', ['apply', '-R', patchPath], cwd: cwd, errorMessage: 'Could not apply the git patch.');
+    await cleanup();
   }
 }

@@ -180,7 +180,11 @@ String _rustTriple(OS os, Architecture arch, {required CodeConfig config}) {
 
     // Windows
     .x64 when os == .windows => 'x86_64-pc-windows-msvc',
-    .arm64 when os == .windows => 'aarch64-pc-windows-msvc',
+
+    // TODO: Add support for Windows arm64 (aarch64-pc-windows-msvc)
+    // Currently blocked due to older tract version (https://github.com/Rikorose/DeepFilterNet/issues/707)
+    // Can be fixed by this PR: https://github.com/Rikorose/DeepFilterNet/pull/695
+    .arm64 when os == .windows => throw UnsupportedError('Windows arm64 is not supported yet.'),
 
     _ => throw UnsupportedError('No libdf binary is published for $os/$arch.'),
   };
