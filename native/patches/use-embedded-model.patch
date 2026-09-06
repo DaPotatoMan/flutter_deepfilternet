@@ -1,0 +1,12 @@
+diff --git a/libDF/src/capi.rs b/libDF/src/capi.rs
+index 6c6e079..2e0f11b 100644
+--- a/libDF/src/capi.rs
++++ b/libDF/src/capi.rs
+@@ -35,2 +35,5 @@ impl DFState {
+-        let df_params =
+-            DfParams::new(PathBuf::from(model_path)).expect("Could not load model from path");
++        let df_params = if model_path.is_empty() {
++            DfParams::default()
++        } else {
++            DfParams::new(PathBuf::from(model_path)).expect("Could not load model from path")
++        };

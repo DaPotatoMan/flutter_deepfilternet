@@ -1,18 +1,33 @@
 name: deepfilternet
-description: "A new Dart FFI package project."
+description: DeepFilterNet real-time speech noise suppression for Flutter.
 version: 0.0.1
+
+homepage: https://github.com/DaPotatoMan/flutter_deepfilternet
+repository: https://github.com/DaPotatoMan/flutter_deepfilternet
+issue_tracker: https://github.com/DaPotatoMan/flutter_deepfilternet/issues
 
 environment:
   sdk: ^3.13.1
+  flutter: ">=3.38.0"
 
 dependencies:
-  code_assets: ^1.1.0
+  archive: ^4.0.7
+  code_assets: ^2.0.0
+  crypto: ^3.0.6
+  ffi: ^2.1.4
+  flutter:
+    sdk: flutter
   hooks: ^2.0.0
-  logging: ^1.3.0
-  native_toolchain_c: ^0.19.0
+  web: ^1.1.1
 
 dev_dependencies:
-  ffi: ^2.1.4
   ffigen: ^20.1.1
   flutter_lints: ^6.0.0
-  test: ^1.28.0
+  flutter_test:
+    sdk: flutter
+  path: ^1.9.1
+
+flutter:
+  assets:
+    - path: assets/web/
+      platforms: [web]

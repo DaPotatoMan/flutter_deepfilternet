@@ -1,0 +1,30 @@
+diff --git a/libDF/Cargo.toml b/libDF/Cargo.toml
+index c0f3271..518ce76 100644
+--- a/libDF/Cargo.toml
++++ b/libDF/Cargo.toml
+@@ -163,3 +163,6 @@ assets = [
+     "644",
+   ],
+ ]
++
++[package.metadata.wasm-pack.profile.release]
++wasm-opt = ["-O3", "--enable-bulk-memory"]
+
+
+diff --git a/libDF/src/wasm.rs b/libDF/src/wasm.rs
+index 2e02095..4cf43d8 100644
+--- a/libDF/src/wasm.rs
++++ b/libDF/src/wasm.rs
+@@ -40,6 +40,12 @@ pub unsafe fn df_create(
+     Box::into_raw(df.boxed())
+ }
+ 
++/// Release a DeepFilterNet Wasm state.
++#[wasm_bindgen]
++pub unsafe fn df_free(model: *mut DFState) {
++    let _ = Box::from_raw(model);
++}
++
+ /// Get DeepFilterNet frame size in samples.
+ #[wasm_bindgen]
+ pub unsafe fn df_get_frame_length(st: *mut DFState) -> usize {

@@ -1,16 +1,11 @@
-# Run with `dart run ffigen --config ffigen.yaml`.
-name: DeepfilternetBindings
-description: |
-  Bindings for `src/deepfilternet.h`.
-
-  Regenerate bindings with `dart run ffigen --config ffigen.yaml`.
-output: 'lib/deepfilternet_bindings_generated.dart'
+name: DfBindings
+description: Generated bindings for DeepFilterNet libdf C API
+output: "lib/src/bindings_native_generated.dart"
 headers:
   entry-points:
-    - 'src/deepfilternet.h'
+    - "native/df.h"
   include-directives:
-    - 'src/deepfilternet.h'
-ffi-native:
+    - "native/df.h"
 comments:
   style: any
   length: full

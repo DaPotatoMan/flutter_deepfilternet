@@ -1,0 +1,42 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    // Native builds
+    {
+      "label": "Build: native/headers",
+      "type": "shell",
+      "command": "cbindgen native/DeepFilterNet/libDF --config cbindgen.toml --output native/df.h",
+    },
+    {
+      "label": "Build: native/dart-bindings",
+      "type": "shell",
+      "command": "dart run ffigen --config ffigen.yaml",
+    },
+    {
+      "label": "Build: native",
+      "type": "shell",
+      "dependsOrder": "sequence",
+      "dependsOn": [
+        "Build: native/headers",
+        "Build: native/dart-bindings",
+      ]
+    },
+    // Web Builds
+    {
+      "label": "Build: web/wasm",
+      "type": "shell",
+      "command": "dart",
+      "args": ["run", "tool/build_web_wasm.dart"]
+    },
+    // Full Build
+    {
+      "group": "build",
+      "label": "Build native assets",
+      "type": "shell",
+      "dependsOn": [
+        "Build: native",
+        "Build: web/wasm",
+      ]
+    }
+  ]
+}
