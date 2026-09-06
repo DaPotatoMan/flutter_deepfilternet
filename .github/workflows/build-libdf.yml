@@ -1,0 +1,145 @@
+name: Build libdf
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["libdf-v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: aarch64-linux-android
+          - os: ubuntu-latest
+            target: armv7-linux-androideabi
+          - os: ubuntu-latest
+            target: x86_64-linux-android
+          - os: macos-latest
+            target: aarch64-apple-ios
+          - os: macos-latest
+            target: aarch64-apple-ios-sim
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: macos-latest
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Enable the embedded model in the C API
+        run: >-
+          git -C native/DeepFilterNet apply --unidiff-zero
+          ../patches/use-embedded-model.patch
+      - name: Install cargo-ndk
+        if: contains(matrix.target, 'android')
+        run: cargo install cargo-ndk --locked
+      - name: Build Android libdf
+        if: contains(matrix.target, 'android')
+        working-directory: native/DeepFilterNet
+        run: >-
+          cargo ndk --target ${{ matrix.target }} build --release
+          --manifest-path libDF/Cargo.toml
+          --features capi,default-model,tract
+      - name: Build libdf
+        if: ${{ !contains(matrix.target, 'android') }}
+        run: >-
+          cargo build --release
+          --manifest-path native/DeepFilterNet/libDF/Cargo.toml
+          --target ${{ matrix.target }}
+          --features capi,default-model,tract
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          release_dir="target/${{ matrix.target }}/release"
+          case "${{ matrix.target }}" in
+            *windows*) pattern="df*.dll"; filename="df.dll" ;;
+            *apple*) pattern="libdf*.dylib"; filename="libdf.dylib" ;;
+            *) pattern="libdf*.so"; filename="libdf.so" ;;
+          esac
+          source="$(find "$release_dir" -maxdepth 2 -type f -name "$pattern" -print -quit)"
+          if [ -z "$source" ]; then
+            echo "No $pattern output found under $release_dir" >&2
+            find "$release_dir" -maxdepth 2 -type f -print >&2
+            exit 1
+          fi
+          cp "$source" "out/libdf-${{ matrix.target }}-$filename"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libdf-${{ matrix.target }}
+          path: out/*
+          if-no-files-found: error
+
+  xcframework:
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: libdf-*-apple-ios*
+          path: artifacts
+      - name: Build xcframework
+        run: |
+          mkdir -p out
+          mkdir -p headers
+          mkdir -p staging/device staging/simulator
+          cp native/df.h headers/
+          cp artifacts/libdf-aarch64-apple-ios/libdf-aarch64-apple-ios-libdf.dylib \
+            staging/device/libdf.dylib
+          cp artifacts/libdf-aarch64-apple-ios-sim/libdf-aarch64-apple-ios-sim-libdf.dylib \
+            staging/simulator/libdf.dylib
+          xcodebuild -create-xcframework \
+            -library staging/device/libdf.dylib \
+            -headers headers \
+            -library staging/simulator/libdf.dylib \
+            -headers headers \
+            -output out/DeepFilter.xcframework
+          ditto -c -k --sequesterRsrc --keepParent \
+            out/DeepFilter.xcframework out/DeepFilter.xcframework.zip
+      - uses: actions/upload-artifact@v7
+        with:
+          name: libdf-ios-xcframework
+          path: out/DeepFilter.xcframework.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: [build, xcframework]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+      - name: Flatten and checksum release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find artifacts -type f \
+            \( -name 'libdf-*' ! -name '*-apple-ios-*' -o -name 'DeepFilter.xcframework.zip' \) \
+            -exec cp '{}' release/ \;
+          cd release
+          sha256sum -- * > SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ github.ref_name }}
+          files: release/*

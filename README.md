@@ -1,49 +1,139 @@
 # deepfilternet
 
-A new Dart FFI package project.
+Flutter FFI bindings for [DeepFilterNet](https://github.com/Rikorose/DeepFilterNet),
+providing real-time noise suppression for 48 kHz mono float32 audio. Native
+assets build hooks download the correct prebuilt `libdf` library and bundle it
+into Android, iOS, macOS, Windows, and Linux applications.
 
-## Getting Started
+## Requirements
 
-This project is a starting point for a Flutter
-[FFI package](https://flutter.dev/to/ffi-package),
-a specialized package that includes native code directly invoked with Dart FFI.
+- Flutter 3.38 or newer
+- Dart 3.10 or newer
+- Network access to GitHub Releases on the first build for a target
 
-## Project structure
+Consuming applications do not need Rust, Cargo, cbindgen, or a native compiler.
 
-This template uses the following structure:
+## Usage
 
-* `src`: Contains the native source code, and a CmakeFile.txt file for building
-  that source code into a dynamic library.
+Create one stateful processor per audio stream, feed it frames of the exact
+length reported by the model, and dispose it when finished:
 
-* `lib`: Contains the Dart code that defines the API of the plugin, and which
-  calls into the native code using `dart:ffi`.
+```dart
+final filter = DeepFilterNet.create(attenLimitDb: 100);
+try {
+  print(filter.frameLength); // 480 for the bundled DFN3 model.
+  final Float32List enhanced = filter.process(inputFrame);
+} finally {
+  filter.dispose();
+}
+```
 
-* `bin`: Contains the `build.dart` that performs the external native builds.
+`inputFrame` must contain `frameLength` mono samples at 48 kHz. Processing is
+synchronous and CPU-intensive; real applications should keep it off the UI
+isolate. A custom compatible ONNX model tarball can be selected with
+`DeepFilterNet.create(modelPath: path)`.
 
-## Building and bundling native code
+Native diagnostic logs are opt-in. Listen to them before processing starts:
 
-`build.dart` does the building of native components.
+```dart
+final filter = DeepFilterNet.create(logLevel: DeepFilterNetLogLevel.info);
+final subscription = filter.logs.listen(debugPrint);
+// Cancel the subscription when log output is no longer needed.
+```
 
-Bundling is done by Flutter based on the output from `build.dart`.
+For this common case, `DeepFilterNetWorker` owns a processor in a dedicated
+worker isolate. Keep the worker alive for the stream rather than spawning one
+per frame, and dispose it when finished:
 
-## Binding to native code
+```dart
+final filter = await DeepFilterNetWorker.spawn();
+try {
+  print(filter.frameLength); // 480 for the bundled DFN3 model.
+  final enhanced = await filter.process(inputFrame);
+} finally {
+  await filter.dispose();
+}
+```
 
-To use the native code, bindings in Dart are needed.
-To avoid writing these by hand, they are generated from the header file
-(`src/deepfilternet.h`) by `package:ffigen`.
-Regenerate the bindings by running `dart run ffigen --config ffigen.yaml`.
+Each worker owns one stateful processor and processes submitted frames in
+order. The frame buffer is transferred to the worker; callers must not reuse
+the input `Float32List` after passing it to `process`.
 
-## Invoking native code
+## Web
 
-Very short-running native functions can be directly invoked from any isolate.
-For example, see `sum` in `lib/deepfilternet.dart`.
+Web builds use the packaged Wasm runtime and bundled DFN3 model in
+`assets/web/`. Before creating a processor, load those assets once:
 
-Longer-running functions should be invoked on a helper isolate to avoid
-dropping frames in Flutter applications.
-For example, see `sumAsync` in `lib/deepfilternet.dart`.
+```dart
+await DeepFilterNet.initialize();
+final filter = DeepFilterNet.create(attenLimitDb: 100);
+```
 
-## Flutter help
+Web does not support `modelPath`; its `logs` stream is currently empty.
+`DeepFilterNetWorker` runs processing in a module Web Worker. The Wasm
+runtime is about 8 MB and the bundled model is about 8 MB before compression
+by the application host.
 
-For help getting started with Flutter, view our
-[online documentation](https://docs.flutter.dev), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The example app reads its bundled 48 kHz mono PCM WAV, processes every frame,
+pads and trims the final partial frame, and writes
+`deepfilternet_enhanced.wav` to the platform temporary directory.
+
+## Native binaries and integrity
+
+There are no official upstream prebuilt C-API libraries for these targets.
+The binaries used by this package are built by this repository's own GitHub
+Actions workflow from the DeepFilterNet `v0.5.6-89-gd375b2d` submodule pin; they are not
+distributed or supported by the upstream DeepFilterNet project. The workflow
+enables the upstream `capi`, `default-model`, and `tract` features and applies
+the checked-in `native/patches/use-embedded-model.patch` so the C API can use
+the compiled-in model.
+
+On its first build for a target, `hook/build.dart` downloads
+`SHA256SUMS.txt`, downloads the matching release asset, verifies its SHA-256
+digest, and only then makes it available for bundling. iOS downloads and
+verifies the XCFramework ZIP before extracting the requested device or
+simulator slice. There is no offline or vendored binary fallback in this
+initial version. A previously populated native-assets build cache can be
+reused, but a clean build on a new machine requires GitHub Releases access.
+
+## Releasing native binaries
+
+The `Build libdf` workflow runs on tags matching `libdf-v*`. To publish the
+current binary set after configuring this repository's GitHub remote:
+
+```sh
+git tag libdf-v0.5.6-capi
+git push origin libdf-v0.5.6-capi
+```
+
+The release must contain the target-prefixed Android and desktop libraries,
+`DeepFilter.xcframework.zip`, and `SHA256SUMS.txt`. Do not move the tag after
+consumers may have cached the release.
+
+To bump DeepFilterNet:
+
+1. Update the `native/DeepFilterNet` submodule to an exact upstream tag.
+2. Rebase or remove the embedded-model patch as required by the new C API.
+3. Regenerate `native/df.h` with cbindgen and regenerate
+   `lib/src/df_bindings_generated.dart` with ffigen if the C API changed.
+4. Run the CI workflow through a new `libdf-v*` tag.
+5. Update `releaseTag` in `hook/build.dart` after that release is complete.
+
+Never update `releaseTag` to assets that have not yet been published with a
+complete checksum manifest.
+
+## Development
+
+The committed header is build-time metadata, so consumers do not need Rust:
+
+```sh
+cbindgen native/DeepFilterNet/libDF \
+  --config cbindgen.toml \
+  --output native/df.h
+dart run ffigen --config ffigen.yaml
+```
+
+The example is a smoke-test harness, not proof that all targets work. Android
+arm64, iOS simulator, iOS physical device, macOS, Windows, and Linux must each
+be exercised after publishing the release before declaring a release fully
+validated.
