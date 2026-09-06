@@ -38,7 +38,7 @@ jobs:
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
       - uses: dtolnay/rust-toolchain@stable
@@ -83,7 +83,7 @@ jobs:
             exit 1
           fi
           cp "$source" "out/libdf-${{ matrix.target }}-$filename"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: libdf-${{ matrix.target }}
           path: out/*
@@ -93,8 +93,8 @@ jobs:
     needs: build
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: libdf-*-apple-ios*
           path: artifacts
@@ -139,7 +139,7 @@ jobs:
             -exec cp '{}' release/ \;
           cd release
           sha256sum -- * > SHA256SUMS.txt
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         with:
           tag_name: ${{ github.ref_name }}
           files: release/*
