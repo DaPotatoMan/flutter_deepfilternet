@@ -174,9 +174,13 @@ String _rustTriple(OS os, Architecture arch, {required CodeConfig config}) {
     .arm64 when os == .macOS => 'aarch64-apple-darwin',
     .x64 when os == .macOS => 'x86_64-apple-darwin',
 
-    // Linux/Windows
+    // Linux
     .x64 when os == .linux => 'x86_64-unknown-linux-gnu',
+    .arm64 when os == .linux => 'aarch64-unknown-linux-gnu',
+
+    // Windows
     .x64 when os == .windows => 'x86_64-pc-windows-msvc',
+    .arm64 when os == .windows => 'aarch64-pc-windows-msvc',
 
     _ => throw UnsupportedError('No libdf binary is published for $os/$arch.'),
   };
