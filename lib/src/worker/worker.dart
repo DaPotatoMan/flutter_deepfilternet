@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:deepfilternet/src/shared.dart';
+import 'package:deepfilternet/src/shared/common.dart';
 
 /// A DeepFilterNet processor that runs on a dedicated worker.
 ///

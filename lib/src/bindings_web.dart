@@ -1,18 +1,10 @@
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:typed_data';
-import 'dart:ui_web' as ui_web;
 
 import 'package:deepfilternet/src/bindings.dart' as stub;
-import 'package:deepfilternet/src/shared.dart';
-import 'package:flutter/services.dart';
-
-const _assetBase = 'packages/deepfilternet/assets/web';
-
-String _resolveAsset(String filename) {
-  final path = ui_web.assetManager.getAssetUrl('$_assetBase/$filename');
-  return Uri.base.resolve(path).toString();
-}
+import 'package:deepfilternet/src/shared/common.dart';
+import 'package:deepfilternet/src/shared/web_utils.dart';
 
 class DeepFilterNet implements stub.DeepFilterNet {
   new _(this._state, this.frameLength);
@@ -59,19 +51,23 @@ class DeepFilterNet implements stub.DeepFilterNet {
   }
 
   static Future<void> _initialize() async {
-    final wasmBindgen = _wasmBindgen ??= _WasmBindgen(await importModule(_resolveAsset('df.js').toJS).toDart);
-    await wasmBindgen.initialize(_resolveAsset('df_bg.wasm').toJS).toDart;
+    final bindgen = _wasmBindgen ??= _WasmBindgen(await WebAsset.import('df.js'));
 
-    final model = await rootBundle.load('$_assetBase/DeepFilterNet3_onnx.tar.gz');
+    await bindgen.initialize(WebAsset.resolvePath('df_bg.wasm').toJS).toDart;
+
+    final model = await WebAsset.load('DeepFilterNet3_onnx.tar.gz');
+
     _modelBytes = model.buffer.asUint8List(model.offsetInBytes, model.lengthInBytes);
   }
 
   @override
   Float32List process(Float32List frame) {
     _ensureUsable();
+
     if (frame.length != frameLength) {
       throw ArgumentError.value(frame.length, 'frame.length', 'Expected exactly $frameLength samples.');
     }
+
     final output = _wasmBindgen!.process(_state, frame.toJS);
     return Float32List.fromList(output.toDart);
   }

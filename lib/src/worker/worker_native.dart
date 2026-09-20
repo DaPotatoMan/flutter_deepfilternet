@@ -3,8 +3,8 @@ import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:deepfilternet/src/bindings_native.dart';
-import 'package:deepfilternet/src/shared.dart';
-import 'package:deepfilternet/src/worker.dart' as stub;
+import 'package:deepfilternet/src/shared/common.dart';
+import 'package:deepfilternet/src/worker/worker.dart' as stub;
 import 'package:isolate_channel/isolate_channel.dart';
 
 const _methodChannelName = 'deepfilternet/worker';

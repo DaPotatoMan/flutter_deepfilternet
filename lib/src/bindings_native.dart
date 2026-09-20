@@ -4,7 +4,7 @@ import 'dart:typed_data';
 
 import 'package:deepfilternet/src/bindings.dart' as stub;
 import 'package:deepfilternet/src/bindings_native_generated.dart';
-import 'package:deepfilternet/src/shared.dart';
+import 'package:deepfilternet/src/shared/common.dart';
 import 'package:ffi/ffi.dart';
 
 class DeepFilterNet implements stub.DeepFilterNet {

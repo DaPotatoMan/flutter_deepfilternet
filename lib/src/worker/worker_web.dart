@@ -1,18 +1,13 @@
 import 'dart:async';
 import 'dart:js_interop';
 import 'dart:typed_data';
-import 'dart:ui_web' as ui_web;
 
-import 'package:deepfilternet/src/shared.dart';
-import 'package:deepfilternet/src/worker.dart' as stub;
-import 'package:flutter/services.dart';
+import 'package:deepfilternet/src/shared/common.dart';
+import 'package:deepfilternet/src/shared/web_utils.dart';
+import 'package:deepfilternet/src/worker/worker.dart' as stub;
 import 'package:web/web.dart' as web;
 
-const _assetBase = 'packages/deepfilternet/assets/web';
-
 enum _EventType { initialize, process, setAttenuationLimit, setPostFilterBeta, dispose }
-
-String _assetUrl(String file) => Uri.base.resolve(ui_web.assetManager.getAssetUrl('$_assetBase/$file')).toString();
 
 final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
   new _(this._worker, this._state, super.frameLength) {
@@ -46,11 +41,15 @@ final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
       throw UnsupportedError('Web does not support modelPath.');
     }
 
-    final worker = web.Worker(_assetUrl('df_worker.js').toJS, web.WorkerOptions(type: 'module'));
+    final worker = web.Worker(
+      WebAsset.resolvePath('df_worker.js').toJS,
+      web.WorkerOptions(type: 'module', name: 'deepfilternet'),
+    );
+
     final bridge = DeepFilterNetWorker._(worker, 0, 0);
 
     try {
-      final asset = await rootBundle.load('$_assetBase/DeepFilterNet3_onnx.tar.gz');
+      final asset = await WebAsset.load('DeepFilterNet3_onnx.tar.gz');
       final model = Uint8List.fromList(asset.buffer.asUint8List(asset.offsetInBytes, asset.lengthInBytes));
       final buffer = model.buffer.toJS;
       final response = await bridge._send(
