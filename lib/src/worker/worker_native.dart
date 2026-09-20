@@ -7,15 +7,52 @@ import 'package:deepfilternet/src/shared/common.dart';
 import 'package:deepfilternet/src/worker/worker.dart' as stub;
 import 'package:isolate_channel/isolate_channel.dart';
 
-const _methodChannelName = 'deepfilternet/worker';
 const _logChannelName = 'deepfilternet/logs';
 
-abstract final class _WorkerMethod {
-  static const initialize = 'initialize';
-  static const process = 'process';
-  static const setAttenuationLimit = 'setAttenuationLimit';
-  static const setPostFilterBeta = 'setPostFilterBeta';
-  static const dispose = 'dispose';
+enum _WorkerMethod {
+  initialize,
+  process,
+  setAttenuationLimit,
+  setPostFilterBeta,
+  dispose;
+
+  static _WorkerMethod? parse(String name) {
+    for (final method in values) {
+      if (method.name == name) return method;
+    }
+
+    return null;
+  }
+}
+
+extension _CallUtils on IsolateMethodCall {
+  _WorkerMethod? get methodKind => .parse(method);
+}
+
+/// A method channel that rejects work after its worker has been disposed.
+final class _WorkerMethodChannel extends IsolateMethodChannel {
+  new(IsolateConnection connection) : super('deepfilternet/worker', connection);
+
+  bool _disposed = false;
+
+  Future<T> invoke<T>(_WorkerMethod method, [dynamic arguments]) {
+    return invokeMethod<T>(method.name, arguments);
+  }
+
+  @override
+  Future<T> invokeMethod<T>(String method, [dynamic arguments]) async {
+    if (_disposed) {
+      throw StateError('This DeepFilterNet worker has been disposed.');
+    }
+
+    return super.invokeMethod<T>(method, arguments);
+  }
+
+  /// Sends the disposal request while preventing all subsequent invocations.
+  Future<void> disposeWorker() {
+    _disposed = true;
+    return super.invokeMethod<void>(_WorkerMethod.dispose.name);
+  }
 }
 
 class const _DeepFilterNetParams({
@@ -25,10 +62,10 @@ class const _DeepFilterNetParams({
 });
 
 final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
-  new _(IsolateConnection connection, super.frameLength) : _connection = connection;
+  new _(this._connection, super.frameLength);
 
   final IsolateConnection _connection;
-  late final _methods = IsolateMethodChannel(_methodChannelName, _connection);
+  late final _methods = _WorkerMethodChannel(_connection);
 
   late final StreamSubscription<String> _logSubscription = IsolateEventChannel(
     _logChannelName,
@@ -48,9 +85,9 @@ final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
     final connection = await spawnIsolate(_BackendWorker.entryPoint);
 
     try {
-      final methods = IsolateMethodChannel(_methodChannelName, connection);
+      final methods = _WorkerMethodChannel(connection);
       final params = _DeepFilterNetParams(modelPath: modelPath, attenLimitDb: attenLimitDb, logLevel: logLevel);
-      final frameLength = await methods.invokeMethod<int>(_WorkerMethod.initialize, params);
+      final frameLength = await methods.invoke<int>(.initialize, params);
       return ._(connection, frameLength);
     } catch (_) {
       connection.close();
@@ -60,14 +97,12 @@ final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
 
   @override
   Future<Float32List> process(Float32List frame) async {
-    _ensureUsable();
-
     if (frame.length != frameLength) {
       throw ArgumentError.value(frame.length, 'frame.length', 'Expected exactly $frameLength samples.');
     }
 
-    final result = await _methods.invokeMethod<TransferableTypedData>(
-      _WorkerMethod.process,
+    final result = await _methods.invoke<TransferableTypedData>(
+      .process,
       TransferableTypedData.fromList([
         frame.buffer.asUint8List(frame.offsetInBytes, frame.lengthInBytes),
       ]),
@@ -77,34 +112,23 @@ final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
   }
 
   @override
-  Future<void> setAttenuationLimit(double limitDb) => _invokeVoid(_WorkerMethod.setAttenuationLimit, limitDb);
+  Future<void> setAttenuationLimit(double limitDb) => _methods.invoke(.setAttenuationLimit, limitDb);
 
   @override
-  Future<void> setPostFilterBeta(double beta) => _invokeVoid(_WorkerMethod.setPostFilterBeta, beta);
+  Future<void> setPostFilterBeta(double beta) => _methods.invoke(.setPostFilterBeta, beta);
 
   @override
   Future<void> dispose() => _dispose();
 
   late final _dispose = Once<void>(() async {
     try {
-      await _methods.invokeMethod<void>(_WorkerMethod.dispose);
+      await _methods.disposeWorker();
     } finally {
       await _logSubscription.cancel();
       await _logs.close();
       _connection.close();
     }
   });
-
-  Future<void> _invokeVoid(String method, double value) async {
-    _ensureUsable();
-    await _methods.invokeMethod<void>(method, value);
-  }
-
-  void _ensureUsable() {
-    if (_dispose.isInvoked) {
-      throw StateError('This DeepFilterNet worker has been disposed.');
-    }
-  }
 }
 
 final class _BackendWorker(final SendPort? send) {
@@ -112,7 +136,7 @@ final class _BackendWorker(final SendPort? send) {
     final connection = setupIsolate(send);
 
     // Create message handler
-    IsolateMethodChannel(_methodChannelName, connection).setMethodCallHandler(onMessage);
+    _WorkerMethodChannel(connection).setMethodCallHandler(onMessage);
 
     // Create logging handler
     IsolateEventChannel(_logChannelName, connection).setStreamHandler(
@@ -140,13 +164,13 @@ final class _BackendWorker(final SendPort? send) {
   }
 
   dynamic onMessage(IsolateMethodCall call) {
-    return switch (call.method) {
-      _WorkerMethod.initialize => init(call),
-      _WorkerMethod.process => process(call),
-      _WorkerMethod.setAttenuationLimit => setAttenuationLimit(call.arguments),
-      _WorkerMethod.setPostFilterBeta => setPostFilterBeta(call.arguments),
-      _WorkerMethod.dispose => dispose(),
-      _ => call.notImplemented(),
+    return switch (call.methodKind) {
+      .initialize => init(call),
+      .process => process(call),
+      .setAttenuationLimit => setAttenuationLimit(call.arguments),
+      .setPostFilterBeta => setPostFilterBeta(call.arguments),
+      .dispose => dispose(),
+      null => call.notImplemented(),
     };
   }
 
