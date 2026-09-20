@@ -40,8 +40,6 @@ final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
   @override
   Stream<String> get logs => _logs.stream;
 
-  Future<void>? _disposeFuture;
-
   static Future<DeepFilterNetWorker> spawn({
     String? modelPath,
     double attenLimitDb = 100,
@@ -85,9 +83,9 @@ final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
   Future<void> setPostFilterBeta(double beta) => _invokeVoid(_WorkerMethod.setPostFilterBeta, beta);
 
   @override
-  Future<void> dispose() => _disposeFuture ??= _dispose();
+  Future<void> dispose() => _dispose();
 
-  Future<void> _dispose() async {
+  late final _dispose = Once<void>(() async {
     try {
       await _methods.invokeMethod<void>(_WorkerMethod.dispose);
     } finally {
@@ -95,7 +93,7 @@ final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
       await _logs.close();
       _connection.close();
     }
-  }
+  });
 
   Future<void> _invokeVoid(String method, double value) async {
     _ensureUsable();
@@ -103,7 +101,7 @@ final class DeepFilterNetWorker extends stub.DeepFilterNetWorker {
   }
 
   void _ensureUsable() {
-    if (_disposeFuture != null) {
+    if (_dispose.isInvoked) {
       throw StateError('This DeepFilterNet worker has been disposed.');
     }
   }

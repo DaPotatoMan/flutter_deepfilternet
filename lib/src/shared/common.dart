@@ -11,6 +11,9 @@ enum DeepFilterNetLogLevel {
 final class Once<T>(final Future<T> Function() _action) {
   Future<T>? _result;
 
+  /// Whether this action has been invoked.
+  bool get isInvoked => _result != null;
+
   Future<T> call() => _result ??= _action();
 }
 
