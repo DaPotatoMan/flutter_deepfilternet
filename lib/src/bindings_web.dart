@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:js_interop';
 import 'dart:typed_data';
 
@@ -15,91 +14,101 @@ class DeepFilterNet implements stub.DeepFilterNet {
     DeepFilterNetLogLevel? logLevel,
   }) {
     if (modelPath != null) {
-      throw UnsupportedError('Web does not support modelPath.');
+      throw UnsupportedError('modelPath is not supported on Web. Use the bundled model instead.');
     }
 
-    final modelBytes = _modelBytes;
-    final wasmBindgen = _wasmBindgen;
-
-    if (modelBytes == null || wasmBindgen == null) {
-      throw StateError('Call and await DeepFilterNet.initialize() before create().');
+    if (!WasmBindgen.isLoaded) {
+      throw StateError(
+        'DeepFilterNet is not initialized. '
+        'Call and await DeepFilterNet.initialize() before create().',
+      );
     }
 
-    final state = wasmBindgen.create(modelBytes.toJS, attenLimitDb).toDartInt;
-    final frameLength = wasmBindgen.frameLength(state).toDartInt;
+    final bindings = WasmBindgen.instance.value;
+    final modelBytes = WasmBindgen.modelBytes.value;
+
+    final state = bindings.create(modelBytes.toJS, attenLimitDb).toDartInt;
+    final frameLength = bindings.frameLength(state).toDartInt;
 
     return ._(state, frameLength);
   }
 
-  static Future<void>? _initializing;
-  static Uint8List? _modelBytes;
-  static _WasmBindgen? _wasmBindgen;
-
-  final int _state;
+  /// Loads the Wasm module required by [DeepFilterNet.create]. Safe to call repeatedly.
+  static Future<void> initialize() => WasmBindgen.load();
 
   @override
   final int frameLength;
+  final int _state;
 
   bool _disposed = false;
 
+  WasmBindgen get bindings {
+    if (_disposed) throw StateError('Cannot use a disposed DeepFilterNet instance.');
+    return WasmBindgen.instance.value;
+  }
+
   @override
-  Stream<String> get logs => const Stream<String>.empty();
-
-  /// Loads the Wasm module required by [DeepFilterNet.create]. Safe to call repeatedly.
-  static Future<void> initialize() {
-    return _initializing ??= _initialize();
-  }
-
-  static Future<void> _initialize() async {
-    final bindgen = _wasmBindgen ??= _WasmBindgen(await WebAsset.import('df.js'));
-
-    await bindgen.initialize(WebAsset.resolvePath('df_bg.wasm').toJS).toDart;
-
-    final model = await WebAsset.load('DeepFilterNet3_onnx.tar.gz');
-
-    _modelBytes = model.buffer.asUint8List(model.offsetInBytes, model.lengthInBytes);
-  }
+  Stream<String> get logs => const .empty();
 
   @override
   Float32List process(Float32List frame) {
-    _ensureUsable();
-
     if (frame.length != frameLength) {
       throw ArgumentError.value(frame.length, 'frame.length', 'Expected exactly $frameLength samples.');
     }
 
-    final output = _wasmBindgen!.process(_state, frame.toJS);
+    final output = bindings.process(_state, frame.toJS);
     return Float32List.fromList(output.toDart);
   }
 
   @override
   void setAttenuationLimit(double limitDb) {
-    _ensureUsable();
-    _wasmBindgen!.setAttenuationLimit(_state, limitDb);
+    bindings.setAttenuationLimit(_state, limitDb);
   }
 
   @override
   void setPostFilterBeta(double beta) {
-    _ensureUsable();
-    _wasmBindgen!.setPostFilterBeta(_state, beta);
+    bindings.setPostFilterBeta(_state, beta);
   }
 
   @override
   void dispose() {
     if (_disposed) return;
-    _wasmBindgen!.free(_state);
-    _disposed = true;
-  }
 
-  void _ensureUsable() {
-    if (_disposed) {
-      throw StateError('This DeepFilterNet instance has been disposed.');
-    }
+    bindings.free(_state);
+    _disposed = true;
   }
 }
 
 /// The ESM module namespace emitted by wasm-bindgen in `df.js`.
-extension type _WasmBindgen(JSObject _) implements JSObject {
+extension type WasmBindgen(JSObject _) implements JSObject {
+  static final modelBytes = Required<Uint8List>(
+    onThrow: () =>
+        throw StateError('DeepFilterNet model is not loaded. Call and await DeepFilterNet.initialize() first.'),
+  );
+
+  static final instance = Required<WasmBindgen>(
+    onThrow: () => throw StateError(
+      'DeepFilterNet Wasm module is not loaded. '
+      'Call and await DeepFilterNet.initialize() first.',
+    ),
+  );
+
+  static final load = Once<void>(() async {
+    instance.set(
+      .new(await WebAsset.import('df.js')),
+    );
+
+    final wasmPath = WebAsset.resolvePath('df_bg.wasm').toJS;
+    final (model, _) = await (
+      WebAsset.load('DeepFilterNet3_onnx.tar.gz'),
+      instance.value.initialize(wasmPath).toDart,
+    ).wait;
+
+    modelBytes.set(model.buffer.asUint8List(model.offsetInBytes, model.lengthInBytes));
+  });
+
+  static bool get isLoaded => modelBytes.isSet && instance.isSet;
+
   @JS('default')
   external JSPromise<JSAny?> initialize(JSString wasmUrl);
 

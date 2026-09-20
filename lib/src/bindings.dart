@@ -18,11 +18,6 @@ class DeepFilterNet {
     DeepFilterNetLogLevel? logLevel,
   }) => throw _unsupported;
 
-  /// Creates the unsupported-platform fallback.
-  ///
-  /// Platform implementations extend this class through this constructor.
-  DeepFilterNet.unsupported();
-
   static Error get _unsupported => UnsupportedError('DeepFilterNet is not supported on this platform.');
 
   /// Prepares the package for processing.
